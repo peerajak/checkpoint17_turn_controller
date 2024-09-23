@@ -17,16 +17,16 @@ using Eigen::MatrixXd;
 using namespace std::chrono_literals;
 using std::placeholders::_1;
 //std::chrono::nanoseconds fifty_milisec = 5000000;
-class DistanceController : public rclcpp::Node {
+class TurnController : public rclcpp::Node {
 public:
 
-  DistanceController() : Node("distance_controller") {
+  TurnController() : Node("turn_controller") {
     // ---- 1. publisher to cmd_vel
       publisher_1_twist =
         this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
     //------- 2. timer_1 related -----------//
     timer_1_ = this->create_wall_timer(
-        1000ms, std::bind(&DistanceController::timer1_callback, this));//nothing about 1 sec
+        1000ms, std::bind(&TurnController::timer1_callback, this));//nothing about 1 sec
     //------- 3. Odom related  -----------//
     callback_group_3_odom = this->create_callback_group(
         rclcpp::CallbackGroupType::MutuallyExclusive);
@@ -36,7 +36,7 @@ public:
     subscription_3_odom = this->create_subscription<nav_msgs::msg::Odometry>(
     //"/odometry/filtered", 10,
         "/rosbot_xl_base_controller/odom", 10,
-        std::bind(&DistanceController::odom_callback, this,
+        std::bind(&TurnController::odom_callback, this,
                   std::placeholders::_1), options3_odom);
 
     //ref_points.push_back(std::make_tuple(0,0));
@@ -69,7 +69,7 @@ private:
     RCLCPP_DEBUG(this->get_logger(), "Timer Callback ");
     timer_1_->cancel();
     //assert(false);
-    std::thread{std::bind(&DistanceController::execute, this)}.detach();
+    std::thread{std::bind(&TurnController::execute, this)}.detach();
   }
 
   void pid_reset(){
@@ -357,14 +357,14 @@ void move_robot(geometry_msgs::msg::Twist &msg) {
 
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
-  auto eight_trajectory_subscriber = std::make_shared<DistanceController>();
+  auto eight_trajectory_subscriber = std::make_shared<TurnController>();
   rclcpp::executors::MultiThreadedExecutor executor;
   executor.add_node(eight_trajectory_subscriber);
   executor.spin();
 
 
 
-  //rclcpp::spin(std::make_shared<DistanceController>());
+  //rclcpp::spin(std::make_shared<TurnController>());
   rclcpp::shutdown();
   return 0;
 }
