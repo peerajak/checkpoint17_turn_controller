@@ -47,12 +47,12 @@ public:
 
 
      //PID parameter   best Kp=4.0 
-    this->Kp = 5;
+    this->Kp = 1;
     this->Ki = 0.0;
-    this->Kd = 2.0;
-    this->Kp_angle = 2.0;
-    this->Ki_angle = 1.0;
-    this->Kd_angle = 0.0;
+    this->Kd = 0.0;
+    this->Kp_angle = 4.0;
+    this->Ki_angle = 0.1;
+    this->Kd_angle = 0.1;
     this->integral_x_pos = 0;
     this->integral_y_pos = 0;
     this->integral_theta = 0;
@@ -167,19 +167,20 @@ private:
 
     while(!ref_points.empty()){
         //std::tuple<double,double,double,double> it2= waypoints.front();
-        std::tuple<double,double,double,double> it2 = ref_points.front();
+        std::tuple<double,double,double,double,char> it2 = ref_points.front();
         double xf = std::get<0>(it2); 
         double yf = std::get<1>(it2); 
         double thetag = atan2(yf,xf);
         double xg = std::get<2>(it2);
         double yg = std::get<3>(it2);
+        
         pid_simulate_pid(xg,yg, thetag,  distance_error_tolerance,angle_tolerance);
         ling.angular.z = 0;
         ling.linear.x = 0;
         ling.linear.y = 0;
         this->move_robot(ling);
         ref_points.pop_front(); 
-        RCLCPP_INFO(this->get_logger(), "ref_points facing (phi) = %f, current_yaw_rad %f ",thetag, this->current_yaw_rad_);
+        RCLCPP_INFO(this->get_logger(), "ref_points w%c facing (phi) = %f, current_yaw_rad %f ",std::get<4>(it2), thetag, this->current_yaw_rad_);
         sleep(3);
     }
     RCLCPP_DEBUG(get_logger(), "No more ref_points");  
@@ -282,7 +283,7 @@ MatrixXd KinematicLeastSquareNormalEq(MatrixXd & u){
     RCLCPP_DEBUG(this->get_logger(), "I heard: '%f'",u(i,0));
     }
     MatrixXd twist = KinematicLeastSquareNormalEq(u);
-    RCLCPP_INFO(this->get_logger(), "twist wz: %f vx ,%f, vy %f",twist(0,0),twist(1,0),twist(2,0));
+    RCLCPP_DEBUG(this->get_logger(), "twist wz: %f vx ,%f, vy %f",twist(0,0),twist(1,0),twist(2,0));
     ling.angular.z = twist(0,0);
     ling.linear.x = twist(1,0);
     ling.linear.y = twist(2,0);
@@ -341,10 +342,10 @@ void move_robot(geometry_msgs::msg::Twist &msg) {
 //   std::list<std::tuple<double, double, double>> waypoints {std::make_tuple(0,1,-1),std::make_tuple(0,1,1),
 //                                 std::make_tuple(0,1,1),std::make_tuple(1.5708, 1, -1),std::make_tuple(-3.1415, -1, -1),
 //                                 std::make_tuple(0.0, -1, 1),std::make_tuple(0.0, -1, 1),std::make_tuple(0.0, -1, -1)};
-  std::list<std::tuple<double, double,double, double>> ref_points { //(face_x, face_y, x, y)
-  std::make_tuple(1.551493891660282,-0.9169527698739754,0,0),
-  std::make_tuple(3.136847278652141,0.219866279748141,0,0),
-  std::make_tuple(5.867151196700162,2.465849497755491,0,0)};
+  std::list<std::tuple<double, double,double, double,char>> ref_points { //(face_x, face_y, x, y)
+  std::make_tuple(1.551493891660282,-0.9169527698739754,0,0,'1'),
+  std::make_tuple(3.050938517716037,-0.0693744071134695,0,0,'2'),
+  std::make_tuple(5.867151196700162,2.465849497755491,0,0,'3')};
   //std::list<std::tuple<double, double, double>> ref_points;
 
  
