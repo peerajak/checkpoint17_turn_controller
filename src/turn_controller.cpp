@@ -20,7 +20,10 @@ using std::placeholders::_1;
 class TurnController : public rclcpp::Node {
 public:
 
-  TurnController() : Node("turn_controller") {
+  TurnController(int argc, char *argv[]) : Node("turn_controller") {
+    // std::string  KP_str = argv[1];
+    // std::string  KI_str = argv[2];
+    // std::string  KD_str = argv[3];
     // ---- 1. publisher to cmd_vel
       publisher_1_twist =
         this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
@@ -50,16 +53,13 @@ public:
     this->Kp = 1;
     this->Ki = 0.0;
     this->Kd = 0.0;
-    this->Kp_angle = 4.0;
-    this->Ki_angle = 0.1;
-    this->Kd_angle = 0.1;
-    this->integral_x_pos = 0;
-    this->integral_y_pos = 0;
-    this->integral_theta = 0;
+    this->Kp_angle = 5.8;//std::stod(KP_str); // 5.8;//5.5,0,0 best, 5.8 max . (5.8,0.1,0.001) best
+    this->Ki_angle = 0.0;//std::stod(KI_str); // 1.0;
+    this->Kd_angle = 0.0;//std::stod(KD_str); // // 0.0;
     this->Hz = 10.0;
     this->dt = 0.1;
     this->hz_inverse_us = 100000;//10 Hz = 0.1 sec = 100,000 microsec 
-  
+    this->pid_reset();
   }
 
 private:
@@ -75,7 +75,8 @@ private:
   void pid_reset(){
         this->integral_x_pos = 0;
         this->integral_y_pos = 0;
-        this->integral_theta = 0;   
+        this->integral_theta = 0; 
+        this->last_error_signal = std::make_tuple(0,0,0);
   }
   // PID FUNCTIONS
 
@@ -84,8 +85,8 @@ private:
     double dx_pos = std::get<1>(error_signal);
     double dy_pos = std::get<2>(error_signal);  
     double omega = dtheta_pos/this->dt;//-current_speed_.angular.z; 
-    double vx =-current_speed_.linear.x;// dx_pos/this->dt;//
-    double vy =-current_speed_.linear.y;// dy_pos/this->dt;
+    double vx = dx_pos/this->dt;//-current_speed_.linear.x;// 
+    double vy = dy_pos/this->dt; //-current_speed_.linear.y;// 
     this->integral_x_pos += dx_pos*this->dt;
     this->integral_y_pos += dy_pos*this->dt;
     this->integral_theta += dtheta_pos*this->dt;
@@ -95,12 +96,13 @@ private:
     double integral_signal_x = this->Ki*this->integral_x_pos;
     double integral_signal_y = this->Ki*this->integral_y_pos;
     double integral_signal_theta = this->Ki_angle*this->integral_theta;
-    double derivative_signal_x = this->Kd * vx;
-    double derivative_signal_y = this->Kd * vy;
-    double derivative_signal_theta = this->Kd_angle * omega;
+    double derivative_signal_x = this->Kd*(dx_pos - std::get<1>(this->last_error_signal))/this->dt;//this->Kd * vx;
+    double derivative_signal_y = this->Kd*(dy_pos - std::get<2>(this->last_error_signal))/this->dt;//this->Kd * vy;
+    double derivative_signal_theta = this->Kd_angle*(dtheta_pos - std::get<0>(this->last_error_signal))/this->dt;//this->Kd_angle * omega;
     omega = normalize_angle(proportion_signal_theta + integral_signal_theta + derivative_signal_theta);
     vx = proportion_signal_x + integral_signal_x + derivative_signal_x;
     vy = proportion_signal_y + integral_signal_y + derivative_signal_y;
+    this->last_error_signal = error_signal;
     std::tuple<double, double, double> controller_signal = std::make_tuple(omega, vx, vy);
     return controller_signal;
   }
@@ -125,7 +127,7 @@ private:
         std::tuple<double,double,double> error_signal = std::make_tuple(thetag - theta_pos, xg - x_pos, yg - y_pos);
         return error_signal;
   }
-  void pid_simulate_pid(double x_goal, double y_goal, double theta_goal_radian, double tolerance, double angle_tolerance){
+  bool pid_simulate_pid(double x_goal, double y_goal, double theta_goal_radian, double tolerance, double angle_tolerance){
     double theta_goal = normalize_angle(theta_goal_radian);
     RCLCPP_INFO(get_logger(), "x_goal %f, y_goal %f,theta_goal %f",x_goal,y_goal,theta_goal);
     std::tuple<double, double, double> output_signal = std::make_tuple(current_yaw_rad_,current_pos_.x, current_pos_.y);//(theta_pos,x_pos,y_pos)
@@ -135,6 +137,7 @@ private:
     int time_to_move = this->Hz * number_of_secs;
     //bool historical_distance_error[10] = {false;false;false;false;false;false;false;false;false;false};
     int within_tolerance_counter = 0;
+    bool is_stabilized_success = false;
     
     for(int i =0; i< time_to_move; i++){
     //while(distance_error_norm > tolerance || fabs(normalize_angle(error_angle)) > angle_tolerance){
@@ -147,16 +150,21 @@ private:
         distance_error_norm = sqrt(error_x*error_x+error_y*error_y);
         
         if( fabs(normalize_angle(error_angle)) <= angle_tolerance){
-            RCLCPP_INFO(this->get_logger(), "distance_error_norm= %f, error_angle= %f ", distance_error_norm ,error_angle);
+            RCLCPP_INFO(this->get_logger(), "distance_error_norm= %f, error_angle= %f, is in tolerence ", distance_error_norm ,error_angle);
             within_tolerance_counter++;
-            if(within_tolerance_counter >= 10) break;
+            if(within_tolerance_counter >= 10) {
+            is_stabilized_success = true;
+            break;
+            }
         }else{
+            RCLCPP_INFO(this->get_logger(), "distance_error_norm= %f, error_angle= %f ", distance_error_norm ,error_angle);
             within_tolerance_counter = 0;
         }
         usleep(hz_inverse_us);
 
     }
     this->pid_reset();
+    return is_stabilized_success;
 
   }
 
@@ -164,6 +172,8 @@ private:
     auto message = std_msgs::msg::Float32MultiArray();
     double distance_error_tolerance = 0.01; 
     double angle_tolerance = 0.01;
+    long int total_elapsed_time = 0;
+    bool all_success = true;
 
     while(!ref_points.empty()){
         //std::tuple<double,double,double,double> it2= waypoints.front();
@@ -173,17 +183,33 @@ private:
         double thetag = atan2(yf,xf);
         double xg = std::get<2>(it2);
         double yg = std::get<3>(it2);
-        
-        pid_simulate_pid(xg,yg, thetag,  distance_error_tolerance,angle_tolerance);
+        std::string result_pid;
+        RCLCPP_INFO(this->get_logger(), "start ref_points w%c facing (%f,%f), phi: %f",
+        std::get<4>(it2), xf, yf, thetag);
+        // Recording the timestamp at the start of the code
+        auto beg = std::chrono::high_resolution_clock::now();
+        bool success = pid_simulate_pid(xg,yg, thetag,  distance_error_tolerance,angle_tolerance);
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - beg);
+        all_success = all_success && success;
+        if(success){
+            result_pid = "success";
+        }else{
+            result_pid = "failed";
+        }
         ling.angular.z = 0;
         ling.linear.x = 0;
         ling.linear.y = 0;
         this->move_robot(ling);
         ref_points.pop_front(); 
-        RCLCPP_INFO(this->get_logger(), "ref_points w%c facing (phi) = %f, current_yaw_rad %f ",std::get<4>(it2), thetag, this->current_yaw_rad_);
-        sleep(3);
+        RCLCPP_INFO(this->get_logger(), "end ref_points w%c facing (%f,%f), phi: %f, current_yaw_rad %f: %s, elasped time %ld",
+        std::get<4>(it2), xf, yf, thetag, this->current_yaw_rad_, result_pid.c_str(),duration.count());
+        total_elapsed_time += duration.count();
+        //sleep(3);
     }
-    RCLCPP_DEBUG(get_logger(), "No more ref_points");  
+    char all_success_char = all_success? 'Y':'N';
+    RCLCPP_INFO(get_logger(), "Summary Kp_angle %f, Ki_angle %f, Kd_angle %f total elapsed time %ld, all successes? %c",
+    this->Kp_angle, this->Ki_angle, this->Kd_angle, total_elapsed_time, all_success_char);   
     rclcpp::shutdown();
   }
 
@@ -338,6 +364,7 @@ void move_robot(geometry_msgs::msg::Twist &msg) {
   //------- Pid variables -------//
   double Kp, Ki, Kd, Kp_angle, Ki_angle, Kd_angle, integral_x_pos, integral_y_pos, integral_theta, Hz, dt;
   int hz_inverse_us;   
+  std::tuple<double,double,double> last_error_signal;
 
 //   std::list<std::tuple<double, double, double>> waypoints {std::make_tuple(0,1,-1),std::make_tuple(0,1,1),
 //                                 std::make_tuple(0,1,1),std::make_tuple(1.5708, 1, -1),std::make_tuple(-3.1415, -1, -1),
@@ -357,7 +384,7 @@ void move_robot(geometry_msgs::msg::Twist &msg) {
 
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
-  auto eight_trajectory_subscriber = std::make_shared<TurnController>();
+  auto eight_trajectory_subscriber = std::make_shared<TurnController>(argc, argv);
   rclcpp::executors::MultiThreadedExecutor executor;
   executor.add_node(eight_trajectory_subscriber);
   executor.spin();
