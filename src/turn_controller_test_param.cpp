@@ -16,19 +16,11 @@
 using Eigen::MatrixXd;
 using namespace std::chrono_literals;
 using std::placeholders::_1;
-
-enum SceneType {
-  Simulation = 1,
-  Cyberworld = 2
-};
-
-
-
 //std::chrono::nanoseconds fifty_milisec = 5000000;
 class TurnController : public rclcpp::Node {
 public:
 
-  TurnController(int scene_number): Node("turn_controller"), scene_number_( static_cast<enum SceneType>(scene_number)) {
+  TurnController(int argc, char *argv[]) : Node("turn_controller") {
     // std::string  KP_str = argv[1];
     // std::string  KI_str = argv[2];
     // std::string  KD_str = argv[3];
@@ -50,7 +42,7 @@ public:
         std::bind(&TurnController::odom_callback, this,
                   std::placeholders::_1), options3_odom);
 
-    //ref_points->push_back(std::make_tuple(0,0));
+    //ref_points.push_back(std::make_tuple(0,0));
     double cur_ref_phi = 0;
     double cur_ref_x = 0;
     double cur_ref_y = 0;
@@ -182,20 +174,10 @@ private:
     double angle_tolerance = 0.01;
     long int total_elapsed_time = 0;
     bool all_success = true;
-    std::list<std::tuple<double, double,double, double,char>> *ref_points;
-    switch(this->scene_number_){
-    case Simulation:
-        ref_points = &this->ref_points_simulation;        
-        RCLCPP_INFO(this->get_logger(), "Simulation Scence");
-    break;
-    case Cyberworld:
-      ref_points = &this->ref_points_cyberworld;   
-      RCLCPP_INFO(this->get_logger(), "Cyberworld Scence");
-    break;
-    }
-    while(!ref_points->empty()){
+
+    while(!ref_points.empty()){
         //std::tuple<double,double,double,double> it2= waypoints.front();
-        std::tuple<double,double,double,double,char> it2 = ref_points->front();
+        std::tuple<double,double,double,double,char> it2 = ref_points.front();
         double xf = std::get<0>(it2); 
         double yf = std::get<1>(it2); 
         double thetag = atan2(yf,xf);
@@ -219,12 +201,12 @@ private:
         ling.linear.x = 0;
         ling.linear.y = 0;
         this->move_robot(ling);
-        ref_points->pop_front(); 
+        ref_points.pop_front(); 
         RCLCPP_INFO(this->get_logger(), "end ref_points w%c facing (%f,%f), phi: %f, current_yaw_rad %f: %s, elasped time %ld",
         std::get<4>(it2), xf, yf, thetag, this->current_yaw_rad_, result_pid.c_str(),duration.count());
         total_elapsed_time += duration.count();
         //sleep(3);
-    } 
+    }
     char all_success_char = all_success? 'Y':'N';
     RCLCPP_INFO(get_logger(), "Summary Kp_angle %f, Ki_angle %f, Kd_angle %f total elapsed time %ld, all successes? %c",
     this->Kp_angle, this->Ki_angle, this->Kd_angle, total_elapsed_time, all_success_char);   
@@ -387,42 +369,22 @@ void move_robot(geometry_msgs::msg::Twist &msg) {
 //   std::list<std::tuple<double, double, double>> waypoints {std::make_tuple(0,1,-1),std::make_tuple(0,1,1),
 //                                 std::make_tuple(0,1,1),std::make_tuple(1.5708, 1, -1),std::make_tuple(-3.1415, -1, -1),
 //                                 std::make_tuple(0.0, -1, 1),std::make_tuple(0.0, -1, 1),std::make_tuple(0.0, -1, -1)};
-  std::list<std::tuple<double, double,double, double,char>> ref_points_simulation { //(face_x, face_y, x, y)
+  std::list<std::tuple<double, double,double, double,char>> ref_points { //(face_x, face_y, x, y)
   std::make_tuple(1.551493891660282,-0.9169527698739754,0,0,'1'),
   std::make_tuple(3.050938517716037,-0.0693744071134695,0,0,'2'),
   std::make_tuple(5.867151196700162,2.465849497755491,0,0,'3')};
   //std::list<std::tuple<double, double, double>> ref_points;
-    std::list<std::tuple<double, double,double, double,char>> ref_points_cyberworld { //(face_x, face_y, x, y)
-  std::make_tuple(0.7884786938160216,0.6713198532248815,0,0,'1'),
-  std::make_tuple(1.7431501458205931,0.039389456894436015,0,0,'2')};
 
  
   rclcpp::TimerBase::SharedPtr timer_1_;
   int timer1_counter;
   rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr publisher_;
-  enum SceneType scene_number_;
+
 };
-
-
 
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
-  enum SceneType scene_number = Simulation;
-    // Check if a scene number argument is provided
-
-  if (argc > 1) {
-    scene_number = static_cast<enum SceneType>(std::atoi(argv[1]));
-    switch (scene_number) {
-    case Simulation:
-    std::cout<<"Simulation scene"<<std::endl;
-    break;
-
-    case  Cyberworld:
-    std::cout<<"Cyberworld scene"<<std::endl;
-    break;
-    }
-  }
-  auto turn_controller_node = std::make_shared<TurnController>(scene_number);
+  auto turn_controller_node = std::make_shared<TurnController>(argc, argv);
   rclcpp::executors::MultiThreadedExecutor executor;
   executor.add_node(turn_controller_node);
   executor.spin();
