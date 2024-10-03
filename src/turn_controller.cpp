@@ -28,7 +28,7 @@ enum SceneType {
 class TurnController : public rclcpp::Node {
 public:
 
-  TurnController(int scene_number): Node("turn_controller"), scene_number_( static_cast<enum SceneType>(scene_number)) {
+  TurnController(enum SceneType scene_number): Node("turn_controller"), scene_number_(scene_number) {
     // std::string  KP_str = argv[1];
     // std::string  KI_str = argv[2];
     // std::string  KD_str = argv[3];
@@ -45,8 +45,8 @@ public:
     rclcpp::SubscriptionOptions options3_odom;
     options3_odom.callback_group = callback_group_3_odom;
     subscription_3_odom = this->create_subscription<nav_msgs::msg::Odometry>(
-    //"/odometry/filtered", 10,
-        "/rosbot_xl_base_controller/odom", 10,
+    "/odometry/filtered", 10,
+        //"/rosbot_xl_base_controller/odom", 10,
         std::bind(&TurnController::odom_callback, this,
                   std::placeholders::_1), options3_odom);
 
@@ -58,12 +58,25 @@ public:
 
 
      //PID parameter   best Kp=4.0 
-    this->Kp = 1;
-    this->Ki = 0.0;
-    this->Kd = 0.0;
-    this->Kp_angle = 5.8;//std::stod(KP_str); // 5.8;//5.5,0,0 best, 5.8 max . (5.8,0.1,0.001) best
-    this->Ki_angle = 0.0;//std::stod(KI_str); // 1.0;
-    this->Kd_angle = 0.0;//std::stod(KD_str); // // 0.0;
+    switch(this->scene_number_){
+    case Simulation:
+        this->Kp = 1;
+        this->Ki = 0.0;
+        this->Kd = 0.0;
+        this->Kp_angle = 2.0;//std::stod(KP_str);  (2.0,0.01,0.1) best
+        this->Ki_angle = 0.01;//std::stod(KI_str); 
+        this->Kd_angle = 0.1;//std::stod(KD_str); 
+    break;
+    case Cyberworld:
+        this->Kp = 1;
+        this->Ki = 0.0;
+        this->Kd = 0.0;
+        this->Kp_angle = 1.5;//std::stod(KP_str);  (1.5,0.001,0.5) best
+        this->Ki_angle = 0.001;//std::stod(KI_str); 
+        this->Kd_angle = 0.5;//std::stod(KD_str); 
+    break;
+    }
+
     this->Hz = 10.0;
     this->dt = 0.1;
     this->hz_inverse_us = 100000;//10 Hz = 0.1 sec = 100,000 microsec 
@@ -128,17 +141,23 @@ private:
     return output_signal;    
   }
 
-  std::tuple<double,double,double> pid_error(std::tuple<double,double,double>& output_signal,double xg, double yg, double thetag){
+  std::tuple<double,double,double> pid_error_rotating(std::tuple<double,double,double>& output_signal,double xf, double yf){       
         double theta_pos = std::get<0>(output_signal);
         double x_pos = std::get<1>(output_signal);
         double y_pos = std::get<2>(output_signal);
-        std::tuple<double,double,double> error_signal = std::make_tuple(thetag - theta_pos, xg - x_pos, yg - y_pos);
+        double thetag= atan2(yf - y_pos,xf - x_pos);
+        std::tuple<double,double,double> error_signal = std::make_tuple(thetag - theta_pos, 0, 0);
+        RCLCPP_INFO(get_logger(), "rotating output |Goal_x:%f,Goal_y:%f|thetag:%f|Current_x:%f,Current_y:%f|current_yaw:%f|angular error:%f "
+        ,xf,yf, thetag,x_pos, y_pos, theta_pos, thetag-theta_pos);
         return error_signal;
   }
-  bool pid_simulate_pid(double x_goal, double y_goal, double theta_goal_radian, double tolerance, double angle_tolerance){
-    double theta_goal = normalize_angle(theta_goal_radian);
-    RCLCPP_INFO(get_logger(), "x_goal %f, y_goal %f,theta_goal %f",x_goal,y_goal,theta_goal);
-    std::tuple<double, double, double> output_signal = std::make_tuple(current_yaw_rad_,current_pos_.x, current_pos_.y);//(theta_pos,x_pos,y_pos)
+
+
+
+bool pid_simulate_rotating(double x_goal, double y_goal, double tolerance, double angle_tolerance){
+    //double theta_goal = normalize_angle(theta_goal_radian);
+    RCLCPP_INFO(get_logger(), "x_goal %f, y_goal %f",x_goal,y_goal);
+   
     double distance_error_norm = 1000; // some large number
     double error_angle = 1000;//some large number
     int number_of_secs = 20;
@@ -149,31 +168,32 @@ private:
     
     for(int i =0; i< time_to_move; i++){
     //while(distance_error_norm > tolerance || fabs(normalize_angle(error_angle)) > angle_tolerance){
-        std::tuple<double, double, double> error = pid_error(output_signal, x_goal, y_goal, theta_goal);
+        std::tuple<double, double, double> output_signal = std::make_tuple(current_yaw_rad_,current_pos_.x, current_pos_.y);//(theta_pos,x_pos,y_pos)
+        std::tuple<double, double, double> error = pid_error_rotating(output_signal, x_goal, y_goal);
         error_angle= std::get<0>(error); 
         double error_x= std::get<1>(error);
         double error_y= std::get<2>(error); 
+        RCLCPP_INFO(this->get_logger(), "error_angle= %f, error_x= %f,error_y=%f",error_angle,error_x,error_y); 
         std::tuple<double, double, double> res = pid_controller(error);//(omega, vx, vy)
         output_signal = pid_plant_process(res);//(theta_pos,x_pos,y_pos)
         distance_error_norm = sqrt(error_x*error_x+error_y*error_y);
         
         if( fabs(normalize_angle(error_angle)) <= angle_tolerance){
-            RCLCPP_INFO(this->get_logger(), "distance_error_norm= %f, error_angle= %f, is in tolerence ", distance_error_norm ,error_angle);
+            RCLCPP_INFO(this->get_logger(), "rotating distance_error_norm= %f, error_angle= %f, angle in tolerence %f", 
+            distance_error_norm ,error_angle, angle_tolerance);
             within_tolerance_counter++;
             if(within_tolerance_counter >= 10) {
-            is_stabilized_success = true;
-            break;
+                is_stabilized_success = true;
+                break;
             }
         }else{
-            RCLCPP_INFO(this->get_logger(), "distance_error_norm= %f, error_angle= %f ", distance_error_norm ,error_angle);
+            RCLCPP_INFO(this->get_logger(), "rotating distance_error_norm= %f, error_angle= %f ", distance_error_norm ,error_angle);
             within_tolerance_counter = 0;
-        }
+        }  
         usleep(hz_inverse_us);
-
     }
     this->pid_reset();
     return is_stabilized_success;
-
   }
 
   void execute() {
@@ -181,8 +201,8 @@ private:
     double distance_error_tolerance = 0.01; 
     double angle_tolerance = 0.01;
     long int total_elapsed_time = 0;
-    bool all_success = true;
-    std::list<std::tuple<double, double,double, double,char>> *ref_points;
+    bool all_success = true, all_success_rotating = true;
+    std::list<std::tuple<double,double,int>> *ref_points;
     switch(this->scene_number_){
     case Simulation:
         ref_points = &this->ref_points_simulation;        
@@ -193,41 +213,41 @@ private:
       RCLCPP_INFO(this->get_logger(), "Cyberworld Scence");
     break;
     }
-    while(!ref_points->empty()){
-        //std::tuple<double,double,double,double> it2= waypoints.front();
-        std::tuple<double,double,double,double,char> it2 = ref_points->front();
-        double xf = std::get<0>(it2); 
-        double yf = std::get<1>(it2); 
-        double thetag = atan2(yf,xf);
-        double xg = std::get<2>(it2);
-        double yg = std::get<3>(it2);
+   for(auto it2 =ref_points->begin(); it2 != ref_points->end(); it2++){        
+        double xg = std::get<0>(*it2);
+        double yg = std::get<1>(*it2);
+        int w_name = std::get<2>(*it2);
+ 
         std::string result_pid;
-        RCLCPP_INFO(this->get_logger(), "start ref_points w%c facing (%f,%f), phi: %f",
-        std::get<4>(it2), xf, yf, thetag);
-        // Recording the timestamp at the start of the code
-        auto beg = std::chrono::high_resolution_clock::now();
-        bool success = pid_simulate_pid(xg,yg, thetag,  distance_error_tolerance,angle_tolerance);
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - beg);
-        all_success = all_success && success;
-        if(success){
-            result_pid = "success";
+        RCLCPP_INFO(this->get_logger(), "next ref_points w%d  (%f,%f)",
+        w_name, xg, yg);
+      
+
+        std::string result_pid_rotating;
+        RCLCPP_INFO(this->get_logger(), "start face ref_points w%d  (%f,%f), current_yaw_rad %f: %s",
+        w_name, xg, yg, this->current_yaw_rad_, result_pid_rotating.c_str());
+        auto beg_rotating= std::chrono::high_resolution_clock::now();
+        bool success_rotating = pid_simulate_rotating(xg,yg, distance_error_tolerance,angle_tolerance);
+        auto end_rotating = std::chrono::high_resolution_clock::now();
+        auto duration_rotating = std::chrono::duration_cast<std::chrono::microseconds>(end_rotating - beg_rotating);
+        all_success_rotating = all_success_rotating && success_rotating;
+        if(success_rotating){
+            result_pid_rotating = "success";
         }else{
-            result_pid = "failed";
+            result_pid_rotating = "failed";
         }
         ling.angular.z = 0;
         ling.linear.x = 0;
         ling.linear.y = 0;
         this->move_robot(ling);
-        ref_points->pop_front(); 
-        RCLCPP_INFO(this->get_logger(), "end ref_points w%c facing (%f,%f), phi: %f, current_yaw_rad %f: %s, elasped time %ld",
-        std::get<4>(it2), xf, yf, thetag, this->current_yaw_rad_, result_pid.c_str(),duration.count());
-        total_elapsed_time += duration.count();
-        //sleep(3);
-    } 
+        RCLCPP_INFO(this->get_logger(), "end face ref_points w%d  (%f,%f), current_yaw_rad %f: %s, elasped time %ld",
+        w_name, xg, yg, this->current_yaw_rad_, result_pid_rotating.c_str(),duration_rotating.count());
+        total_elapsed_time += duration_rotating.count();    
+        usleep(hz_inverse_us);
+    }
     char all_success_char = all_success? 'Y':'N';
     RCLCPP_INFO(get_logger(), "Summary Kp_angle %f, Ki_angle %f, Kd_angle %f total elapsed time %ld, all successes? %c",
-    this->Kp_angle, this->Ki_angle, this->Kd_angle, total_elapsed_time, all_success_char);   
+    this->Kp_angle, this->Ki_angle, this->Kd_angle, total_elapsed_time, all_success_char); 
     rclcpp::shutdown();
   }
 
@@ -387,14 +407,14 @@ void move_robot(geometry_msgs::msg::Twist &msg) {
 //   std::list<std::tuple<double, double, double>> waypoints {std::make_tuple(0,1,-1),std::make_tuple(0,1,1),
 //                                 std::make_tuple(0,1,1),std::make_tuple(1.5708, 1, -1),std::make_tuple(-3.1415, -1, -1),
 //                                 std::make_tuple(0.0, -1, 1),std::make_tuple(0.0, -1, 1),std::make_tuple(0.0, -1, -1)};
-  std::list<std::tuple<double, double,double, double,char>> ref_points_simulation { //(face_x, face_y, x, y)
-  std::make_tuple(1.551493891660282,-0.9169527698739754,0,0,'1'),
-  std::make_tuple(3.050938517716037,-0.0693744071134695,0,0,'2'),
-  std::make_tuple(5.867151196700162,2.465849497755491,0,0,'3')};
+  std::list<std::tuple<double,double,int>> ref_points_simulation { //(face_x, face_y, x, y)
+  std::make_tuple(0.527354894562477,-1.306332441241303,1),
+  std::make_tuple(1.4148843902023136,-0.3760951047490883,2),
+  std::make_tuple(0.7640531990921009,0.3725023199809377,3)};
   //std::list<std::tuple<double, double, double>> ref_points;
-    std::list<std::tuple<double, double,double, double,char>> ref_points_cyberworld { //(face_x, face_y, x, y)
-  std::make_tuple(0.7884786938160216,0.6713198532248815,0,0,'1'),
-  std::make_tuple(1.7431501458205931,0.039389456894436015,0,0,'2')};
+    std::list<std::tuple<double,double,int>> ref_points_cyberworld { //(face_x, face_y, x, y)
+  std::make_tuple(0.7884786938160216,0.6713198532248815,1),//Husarian logo
+  std::make_tuple(1.7431501458205931,0.039389456894436015,2)};// The construct's logo
 
  
   rclcpp::TimerBase::SharedPtr timer_1_;
