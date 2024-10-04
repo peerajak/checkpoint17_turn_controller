@@ -156,7 +156,7 @@ private:
 
 bool pid_simulate_rotating(double x_goal, double y_goal, double tolerance, double angle_tolerance){
     //double theta_goal = normalize_angle(theta_goal_radian);
-    RCLCPP_INFO(get_logger(), "x_goal %f, y_goal %f",x_goal,y_goal);
+    RCLCPP_DEBUG(get_logger(), "x_goal %f, y_goal %f",x_goal,y_goal);
    
     double distance_error_norm = 1000; // some large number
     double error_angle = 1000;//some large number
@@ -173,7 +173,7 @@ bool pid_simulate_rotating(double x_goal, double y_goal, double tolerance, doubl
         error_angle= std::get<0>(error); 
         double error_x= std::get<1>(error);
         double error_y= std::get<2>(error); 
-        RCLCPP_INFO(this->get_logger(), "error_angle= %f, error_x= %f,error_y=%f",error_angle,error_x,error_y); 
+        RCLCPP_DEBUG(this->get_logger(), "error_angle= %f, error_x= %f,error_y=%f",error_angle,error_x,error_y); 
         std::tuple<double, double, double> res = pid_controller(error);//(omega, vx, vy)
         output_signal = pid_plant_process(res);//(theta_pos,x_pos,y_pos)
         distance_error_norm = sqrt(error_x*error_x+error_y*error_y);
