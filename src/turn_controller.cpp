@@ -2,6 +2,7 @@
 #include "rclcpp/utilities.hpp"
 #include "std_msgs/msg/float32_multi_array.hpp"
 #include <chrono>
+#include <math.h>
 #include <memory>
 #include <tuple>
 #include <vector>
@@ -71,9 +72,9 @@ public:
         this->Kp = 1;
         this->Ki = 0.0;
         this->Kd = 0.0;
-        this->Kp_angle = 1.5;//std::stod(KP_str);  (1.5,0.001,0.5) best
-        this->Ki_angle = 0.001;//std::stod(KI_str); 
-        this->Kd_angle = 0.5;//std::stod(KD_str); 
+        this->Kp_angle = 0.25;//std::stod(KP_str);  (1.5,0.001,0.5) best
+        this->Ki_angle = 0.0;//std::stod(KI_str); 
+        this->Kd_angle = 0.1;//std::stod(KD_str); 
     break;
     }
 
@@ -89,6 +90,26 @@ private:
   void timer1_callback() {
     RCLCPP_DEBUG(this->get_logger(), "Timer Callback ");
     timer_1_->cancel();
+    while( !this->is_odom_started){
+        sleep(1);
+    }
+    double x,y;
+    if(this->scene_number_ == Cyberworld){
+        //this->ref_points_cyberworld.push_back(std::make_tuple(this->current_pos_.x, this->current_pos_.y,1));
+        int i=0;
+        x = this->current_pos_.x;
+        y = this->current_pos_.y;
+        for(auto it = waypoints_cyberworld.begin(); it!= waypoints_cyberworld.end(); it++){
+            i++;
+            double dx = std::get<0>(*it);
+            double dy = std::get<1>(*it);
+            x += dx;
+            y += dy;
+            this->ref_points_cyberworld.push_back(std::make_tuple(x,y,1));  
+        
+        }     
+        this->offset_yawrad_ = this->current_yaw_rad_;   
+    }
     //assert(false);
     std::thread{std::bind(&TurnController::execute, this)}.detach();
   }
@@ -146,9 +167,10 @@ private:
         double x_pos = std::get<1>(output_signal);
         double y_pos = std::get<2>(output_signal);
         double thetag= atan2(yf - y_pos,xf - x_pos);
-        std::tuple<double,double,double> error_signal = std::make_tuple(thetag - theta_pos, 0, 0);
+        double theta_error = normalize_angle(thetag - theta_pos);
+        std::tuple<double,double,double> error_signal = std::make_tuple(theta_error, 0, 0);
         RCLCPP_INFO(get_logger(), "rotating output |Goal_x:%f,Goal_y:%f|thetag:%f|Current_x:%f,Current_y:%f|current_yaw:%f|angular error:%f "
-        ,xf,yf, thetag,x_pos, y_pos, theta_pos, thetag-theta_pos);
+        ,xf,yf, thetag,x_pos, y_pos, theta_pos, theta_error);
         return error_signal;
   }
 
@@ -244,6 +266,7 @@ bool pid_simulate_rotating(double x_goal, double y_goal, double tolerance, doubl
         w_name, xg, yg, this->current_yaw_rad_, result_pid_rotating.c_str(),duration_rotating.count());
         total_elapsed_time += duration_rotating.count();    
         usleep(hz_inverse_us);
+        sleep(1);
     }
     char all_success_char = all_success? 'Y':'N';
     RCLCPP_INFO(get_logger(), "Summary Kp_angle %f, Ki_angle %f, Kd_angle %f total elapsed time %ld, all successes? %c",
@@ -364,19 +387,20 @@ void move_robot(geometry_msgs::msg::Twist &msg) {
   geometry_msgs::msg::Twist ling;
   //------- 3. Odom related  Functions -----------//  
   void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg) {
-
+    is_odom_started = true;
     current_pos_ = msg->pose.pose.position;
     current_angle_ = msg->pose.pose.orientation;
-    current_yaw_rad_ = yaw_theta_from_quaternion(
+    current_yaw_rad_raw_ = yaw_theta_from_quaternion(
         msg->pose.pose.orientation.x, msg->pose.pose.orientation.y,
         msg->pose.pose.orientation.z, msg->pose.pose.orientation.w);
+    current_yaw_rad_ = current_yaw_rad_raw_ - offset_yawrad_;
     
     current_speed_ = msg->twist.twist;
     //current_speed_y = msg->twist.twist.linear.y;
     //current_angular_velocity = msg->twist.twist.angular.z;
 
-    RCLCPP_DEBUG(this->get_logger(), "current pos=['%f','%f','%f'",
-                 current_pos_.x, current_pos_.y, current_yaw_rad_);
+    RCLCPP_DEBUG(this->get_logger(), "current pos=['%f','%f','%f','%f',%f",
+                 current_pos_.x, current_pos_.y, current_yaw_rad_raw_, offset_yawrad_, current_yaw_rad_);
   }
   double yaw_theta_from_quaternion(double qx, double qy, double qz, double qw) {
     double roll_rad, pitch_rad, yaw_rad;
@@ -393,8 +417,8 @@ void move_robot(geometry_msgs::msg::Twist &msg) {
   geometry_msgs::msg::Point current_pos_;
   geometry_msgs::msg::Quaternion current_angle_;
   geometry_msgs::msg::Twist current_speed_;
-  double current_yaw_rad_;
-
+  double current_yaw_rad_, current_yaw_rad_raw_, offset_yawrad_=0;
+  bool is_odom_started = false;
   //--------  Kinematic related private variables --------// 
   double l = 0.500/2;
   double r = 0.254/2;
@@ -412,9 +436,12 @@ void move_robot(geometry_msgs::msg::Twist &msg) {
   std::make_tuple(1.4148843902023136,-0.3760951047490883,2),
   std::make_tuple(0.7640531990921009,0.3725023199809377,3)};
   //std::list<std::tuple<double, double, double>> ref_points;
-    std::list<std::tuple<double,double,int>> ref_points_cyberworld { //(face_x, face_y, x, y)
-  std::make_tuple(0.7884786938160216,0.6713198532248815,1),//Husarian logo
-  std::make_tuple(1.7431501458205931,0.039389456894436015,2)};// The construct's logo
+  std::list<std::tuple<double,double,int>> ref_points_cyberworld;
+  std::list<std::tuple<double,double,int>> waypoints_cyberworld{ 
+  std::make_tuple(0.9482432341447602, -0.6949252873624713,1),//Husarian logo
+  std::make_tuple(-0.6781088534424018, -1.19580911475203,2)};// The construct's logo
+
+  std::tuple<double,double> start_position_cyberworld;
 
  
   rclcpp::TimerBase::SharedPtr timer_1_;
