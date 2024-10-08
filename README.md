@@ -30,4 +30,10 @@ It would only turn the robot to 2 goals in the real maze robot
 source install/setup.bash; ros2 run turn_controller turn_controller 2
 ```
 
-
+Helper commands
+```
+ros2 topic echo /odometry/filtered --field pose.pose.position
+```
+```
+ros2 topic echo /rosbot_xl_base_controller/odom --field pose.pose.position
+```

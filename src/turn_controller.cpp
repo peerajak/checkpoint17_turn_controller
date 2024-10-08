@@ -72,9 +72,9 @@ public:
         this->Kp = 1;
         this->Ki = 0.0;
         this->Kd = 0.0;
-        this->Kp_angle = 0.25;//std::stod(KP_str);  (1.5,0.001,0.5) best
-        this->Ki_angle = 0.0;//std::stod(KI_str); 
-        this->Kd_angle = 0.1;//std::stod(KD_str); 
+        this->Kp_angle = 0.65;//std::stod(KP_str);  (1.5,0.001,0.5) best
+        this->Ki_angle = 0.001;//std::stod(KI_str); 
+        this->Kd_angle = 0.01;//std::stod(KD_str); 
     break;
     }
 
@@ -438,8 +438,8 @@ void move_robot(geometry_msgs::msg::Twist &msg) {
   //std::list<std::tuple<double, double, double>> ref_points;
   std::list<std::tuple<double,double,int>> ref_points_cyberworld;
   std::list<std::tuple<double,double,int>> waypoints_cyberworld{ 
-  std::make_tuple(0.9482432341447602, -0.6949252873624713,1),//Husarian logo
-  std::make_tuple(-0.6781088534424018, -1.19580911475203,2)};// The construct's logo
+  std::make_tuple(0.9482432341447602, -0.50,1),//Husarian logo
+  std::make_tuple(-0.55, -0.85,2)};// The construct's logo
 
   std::tuple<double,double> start_position_cyberworld;
 
