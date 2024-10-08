@@ -169,7 +169,7 @@ private:
         double thetag= atan2(yf - y_pos,xf - x_pos);
         double theta_error = normalize_angle(thetag - theta_pos);
         std::tuple<double,double,double> error_signal = std::make_tuple(theta_error, 0, 0);
-        RCLCPP_INFO(get_logger(), "rotating output |Goal_x:%f,Goal_y:%f|thetag:%f|Current_x:%f,Current_y:%f|current_yaw:%f|angular error:%f "
+        RCLCPP_DEBUG(get_logger(), "rotating output |Goal_x:%f,Goal_y:%f|thetag:%f|Current_x:%f,Current_y:%f|current_yaw:%f|angular error:%f "
         ,xf,yf, thetag,x_pos, y_pos, theta_pos, theta_error);
         return error_signal;
   }
@@ -201,7 +201,7 @@ bool pid_simulate_rotating(double x_goal, double y_goal, double tolerance, doubl
         distance_error_norm = sqrt(error_x*error_x+error_y*error_y);
         
         if( fabs(normalize_angle(error_angle)) <= angle_tolerance){
-            RCLCPP_INFO(this->get_logger(), "rotating distance_error_norm= %f, error_angle= %f, angle in tolerence %f", 
+            RCLCPP_DEBUG(this->get_logger(), "rotating distance_error_norm= %f, error_angle= %f, angle in tolerence %f", 
             distance_error_norm ,error_angle, angle_tolerance);
             within_tolerance_counter++;
             if(within_tolerance_counter >= 10) {
@@ -209,7 +209,7 @@ bool pid_simulate_rotating(double x_goal, double y_goal, double tolerance, doubl
                 break;
             }
         }else{
-            RCLCPP_INFO(this->get_logger(), "rotating distance_error_norm= %f, error_angle= %f ", distance_error_norm ,error_angle);
+            RCLCPP_DEBUG(this->get_logger(), "rotating distance_error_norm= %f, error_angle= %f ", distance_error_norm ,error_angle);
             within_tolerance_counter = 0;
         }  
         usleep(hz_inverse_us);
@@ -228,11 +228,11 @@ bool pid_simulate_rotating(double x_goal, double y_goal, double tolerance, doubl
     switch(this->scene_number_){
     case Simulation:
         ref_points = &this->ref_points_simulation;        
-        RCLCPP_INFO(this->get_logger(), "Simulation Scence");
+        RCLCPP_DEBUG(this->get_logger(), "Simulation Scence");
     break;
     case Cyberworld:
       ref_points = &this->ref_points_cyberworld;   
-      RCLCPP_INFO(this->get_logger(), "Cyberworld Scence");
+      RCLCPP_DEBUG(this->get_logger(), "Cyberworld Scence");
     break;
     }
    for(auto it2 =ref_points->begin(); it2 != ref_points->end(); it2++){        
@@ -241,12 +241,12 @@ bool pid_simulate_rotating(double x_goal, double y_goal, double tolerance, doubl
         int w_name = std::get<2>(*it2);
  
         std::string result_pid;
-        RCLCPP_INFO(this->get_logger(), "next ref_points w%d  (%f,%f)",
+        RCLCPP_DEBUG(this->get_logger(), "next ref_points w%d  (%f,%f)",
         w_name, xg, yg);
       
 
         std::string result_pid_rotating;
-        RCLCPP_INFO(this->get_logger(), "start face ref_points w%d  (%f,%f), current_yaw_rad %f: %s",
+        RCLCPP_DEBUG(this->get_logger(), "start face ref_points w%d  (%f,%f), current_yaw_rad %f: %s",
         w_name, xg, yg, this->current_yaw_rad_, result_pid_rotating.c_str());
         auto beg_rotating= std::chrono::high_resolution_clock::now();
         bool success_rotating = pid_simulate_rotating(xg,yg, distance_error_tolerance,angle_tolerance);
@@ -262,14 +262,14 @@ bool pid_simulate_rotating(double x_goal, double y_goal, double tolerance, doubl
         ling.linear.x = 0;
         ling.linear.y = 0;
         this->move_robot(ling);
-        RCLCPP_INFO(this->get_logger(), "end face ref_points w%d  (%f,%f), current_yaw_rad %f: %s, elasped time %ld",
+        RCLCPP_DEBUG(this->get_logger(), "end face ref_points w%d  (%f,%f), current_yaw_rad %f: %s, elasped time %ld",
         w_name, xg, yg, this->current_yaw_rad_, result_pid_rotating.c_str(),duration_rotating.count());
         total_elapsed_time += duration_rotating.count();    
         usleep(hz_inverse_us);
         sleep(1);
     }
     char all_success_char = all_success? 'Y':'N';
-    RCLCPP_INFO(get_logger(), "Summary Kp_angle %f, Ki_angle %f, Kd_angle %f total elapsed time %ld, all successes? %c",
+    RCLCPP_DEBUG(get_logger(), "Summary Kp_angle %f, Ki_angle %f, Kd_angle %f total elapsed time %ld, all successes? %c",
     this->Kp_angle, this->Ki_angle, this->Kd_angle, total_elapsed_time, all_success_char); 
     rclcpp::shutdown();
   }
